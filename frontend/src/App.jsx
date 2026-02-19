@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import FileUpload from './components/FileUpload';
-import StatsGrid from './components/StatsGrid';
+import Dashboard from './components/Dashboard';
 import GraphVisualization from './components/GraphVisualization';
 import FraudRingTable from './components/FraudRingTable';
 import SuspiciousAccountsTable from './components/SuspiciousAccountsTable';
+import Statistics from './components/Statistics';
 
 function App() {
     const [results, setResults] = useState(null);
@@ -12,7 +13,8 @@ function App() {
     const [progress, setProgress] = useState(0);
     const [progressText, setProgressText] = useState('');
     const [error, setError] = useState(null);
-    const [activeTab, setActiveTab] = useState('graph');
+    const [activeTab, setActiveTab] = useState('dashboard');
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     const handleUpload = useCallback(async (file) => {
         setLoading(true);
@@ -80,110 +82,221 @@ function App() {
         setError(null);
         setProgress(0);
         setProgressText('');
-        setActiveTab('graph');
+        setActiveTab('dashboard');
+        setSidebarOpen(false);
     }, []);
 
-    return (
-        <div className="app-container">
-            {/* Header */}
-            <header className="header">
-                <div className="header__badge">
-                    <span>🔬</span>
-                    <span>Advanced Threat Detection</span>
-                </div>
-                <h1 className="header__title">Financial Forensics Engine</h1>
-                <p className="header__subtitle">
-                    Expose money muling networks through graph analysis, cycle detection, and intelligent pattern recognition.
-                </p>
-            </header>
+    const handleNavClick = useCallback((tab) => {
+        setActiveTab(tab);
+        setSidebarOpen(false);
+    }, []);
 
-            {/* Upload Section */}
-            {!results && (
-                <div className="fade-in">
+    // Upload page
+    if (!results) {
+        return (
+            <>
+                {/* Loading overlay */}
+                {loading && (
+                    <div className="loading-overlay">
+                        <div className="loading-hourglass">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M5 2h14M5 22h14M7 2v4.5L12 12l-5 5.5V22M17 2v4.5L12 12l5 5.5V22" />
+                            </svg>
+                        </div>
+                        <div className="loading-text">{progressText}</div>
+                        <div className="loading-progress">
+                            <div className="loading-progress__fill" style={{ width: `${progress}%` }} />
+                        </div>
+                    </div>
+                )}
+
+                <div className="upload-page">
+                    {/* Header */}
+                    <header className="header">
+                        <div className="header__badge">
+                            <span>Advanced Threat Detection</span>
+                        </div>
+                        <h1 className="header__title">Financial Forensics Engine</h1>
+                        <p className="header__subtitle">
+                            Expose money muling networks through graph analysis, cycle detection, and intelligent pattern recognition.
+                        </p>
+                    </header>
+
                     <FileUpload
                         onUpload={handleUpload}
                         loading={loading}
                         progress={progress}
                         progressText={progressText}
                     />
+
+                    {/* Error Display */}
+                    {error && (
+                        <div className="error-banner fade-in">
+                            <div className="error-banner__icon">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                    <path d="M10 2L18 17H2L10 2Z" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                                    <path d="M10 8v4M10 14h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                </svg>
+                            </div>
+                            <div className="error-banner__text">
+                                <strong>Analysis Error:</strong> {error}
+                            </div>
+                        </div>
+                    )}
                 </div>
+            </>
+        );
+    }
+
+    // Results page with sidebar
+    return (
+        <div className="results-layout">
+            {/* Hamburger button for mobile */}
+            <button
+                className="hamburger"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                id="hamburger-btn"
+                aria-label="Toggle navigation"
+            >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    {sidebarOpen ? (
+                        <>
+                            <path d="M18 6L6 18" />
+                            <path d="M6 6l12 12" />
+                        </>
+                    ) : (
+                        <>
+                            <path d="M3 6h18" />
+                            <path d="M3 12h18" />
+                            <path d="M3 18h18" />
+                        </>
+                    )}
+                </svg>
+            </button>
+
+            {/* Sidebar overlay for mobile */}
+            {sidebarOpen && (
+                <div
+                    className="sidebar-overlay sidebar-overlay--visible"
+                    onClick={() => setSidebarOpen(false)}
+                />
             )}
 
-            {/* Error Display */}
-            {error && (
-                <div className="error-banner fade-in">
-                    <span className="error-banner__icon">⚠️</span>
-                    <div className="error-banner__text">
-                        <strong>Analysis Error:</strong> {error}
-                    </div>
+            {/* Sidebar */}
+            <aside className={`sidebar ${sidebarOpen ? 'sidebar--open' : ''}`} id="sidebar">
+                <div className="sidebar__brand" onClick={handleReset} id="brand-home-link">
+                    <div className="sidebar__brand-name">Financial Forensics</div>
+                    <div className="sidebar__brand-sub">Money Muling Detector</div>
                 </div>
-            )}
 
-            {/* Results Section */}
-            {results && (
-                <>
-                    {/* Stats */}
+                <nav className="sidebar__nav">
+                    <button
+                        className={`sidebar__nav-item ${activeTab === 'dashboard' ? 'sidebar__nav-item--active' : ''}`}
+                        onClick={() => handleNavClick('dashboard')}
+                        id="nav-dashboard"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+                            <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
+                        </svg>
+                        Dashboard
+                    </button>
+
+                    <button
+                        className={`sidebar__nav-item ${activeTab === 'graph' ? 'sidebar__nav-item--active' : ''}`}
+                        onClick={() => handleNavClick('graph')}
+                        id="nav-graph"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="5" cy="12" r="2" /><circle cx="19" cy="6" r="2" /><circle cx="19" cy="18" r="2" />
+                            <path d="M7 12h8M15 7l-8 5M15 17l-8-5" />
+                        </svg>
+                        Network Graph
+                    </button>
+
+                    <button
+                        className={`sidebar__nav-item ${activeTab === 'rings' ? 'sidebar__nav-item--active' : ''}`}
+                        onClick={() => handleNavClick('rings')}
+                        id="nav-rings"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                        </svg>
+                        Fraud Rings Table
+                    </button>
+
+                    <button
+                        className={`sidebar__nav-item ${activeTab === 'accounts' ? 'sidebar__nav-item--active' : ''}`}
+                        onClick={() => handleNavClick('accounts')}
+                        id="nav-accounts"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                        </svg>
+                        Suspicious Accounts
+                    </button>
+
+                    <button
+                        className={`sidebar__nav-item ${activeTab === 'statistics' ? 'sidebar__nav-item--active' : ''}`}
+                        onClick={() => handleNavClick('statistics')}
+                        id="nav-statistics"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 20V10M12 20V4M6 20v-6" />
+                        </svg>
+                        Statistics
+                    </button>
+                </nav>
+
+                <div className="sidebar__footer">
+                    <button
+                        className="sidebar__download-btn"
+                        onClick={handleDownload}
+                        id="download-json-btn"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        Download JSON
+                    </button>
+                </div>
+            </aside>
+
+            {/* Main content area */}
+            <main className="main-content">
+                {activeTab === 'dashboard' && (
                     <div className="fade-in">
-                        <StatsGrid summary={results.summary} />
+                        <Dashboard results={results} />
                     </div>
+                )}
 
-                    {/* Action Buttons */}
-                    <div className="download-section fade-in fade-in-delay-1">
-                        <button className="btn btn--primary btn--lg" onClick={handleDownload} id="download-json-btn">
-                            <span>📥</span>
-                            Download JSON Report
-                        </button>
-                        <button className="btn btn--secondary btn--lg" onClick={handleReset} id="reset-btn">
-                            <span>🔄</span>
-                            New Analysis
-                        </button>
+                {activeTab === 'graph' && (
+                    <div className="fade-in">
+                        <GraphVisualization graphData={results.graph_data} fraudRings={results.fraud_rings} />
                     </div>
+                )}
 
-                    {/* Tabs */}
-                    <div className="tabs fade-in fade-in-delay-2">
-                        <button
-                            className={`tab ${activeTab === 'graph' ? 'tab--active' : ''}`}
-                            onClick={() => setActiveTab('graph')}
-                            id="tab-graph"
-                        >
-                            🕸️ Network Graph
-                        </button>
-                        <button
-                            className={`tab ${activeTab === 'rings' ? 'tab--active' : ''}`}
-                            onClick={() => setActiveTab('rings')}
-                            id="tab-rings"
-                        >
-                            🔗 Fraud Rings
-                        </button>
-                        <button
-                            className={`tab ${activeTab === 'accounts' ? 'tab--active' : ''}`}
-                            onClick={() => setActiveTab('accounts')}
-                            id="tab-accounts"
-                        >
-                            🚨 Suspicious Accounts
-                        </button>
+                {activeTab === 'rings' && (
+                    <div className="fade-in">
+                        <FraudRingTable rings={results.fraud_rings} />
                     </div>
+                )}
 
-                    {/* Content Area */}
-                    {activeTab === 'graph' && (
-                        <div className="fade-in fade-in-delay-3">
-                            <GraphVisualization graphData={results.graph_data} fraudRings={results.fraud_rings} />
-                        </div>
-                    )}
+                {activeTab === 'accounts' && (
+                    <div className="fade-in">
+                        <SuspiciousAccountsTable accounts={results.suspicious_accounts} />
+                    </div>
+                )}
 
-                    {activeTab === 'rings' && (
-                        <div className="fade-in fade-in-delay-3">
-                            <FraudRingTable rings={results.fraud_rings} />
-                        </div>
-                    )}
-
-                    {activeTab === 'accounts' && (
-                        <div className="fade-in fade-in-delay-3">
-                            <SuspiciousAccountsTable accounts={results.suspicious_accounts} />
-                        </div>
-                    )}
-                </>
-            )}
+                {activeTab === 'statistics' && (
+                    <div className="fade-in">
+                        <Statistics results={results} />
+                    </div>
+                )}
+            </main>
         </div>
     );
 }

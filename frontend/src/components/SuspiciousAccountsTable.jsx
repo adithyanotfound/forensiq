@@ -3,8 +3,13 @@ import React from 'react';
 function SuspiciousAccountsTable({ accounts }) {
     if (!accounts || accounts.length === 0) {
         return (
-            <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
-                <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>✅</div>
+            <div style={{
+                textAlign: 'center',
+                padding: '3rem',
+                background: 'var(--bg-primary)',
+                borderRadius: 'var(--radius-lg)',
+                border: '1px solid var(--border-subtle)'
+            }}>
                 <h3 style={{ color: 'var(--accent-success)' }}>No Suspicious Accounts</h3>
                 <p style={{ color: 'var(--text-tertiary)', marginTop: '0.5rem' }}>
                     No accounts were flagged as suspicious in this dataset.
@@ -20,7 +25,7 @@ function SuspiciousAccountsTable({ accounts }) {
     };
 
     const getScoreTextColor = (score) => {
-        if (score >= 80) return 'var(--accent-danger-light)';
+        if (score >= 80) return '#ff6b6b';
         if (score >= 50) return 'var(--accent-warning)';
         return 'var(--accent-success)';
     };
@@ -36,15 +41,12 @@ function SuspiciousAccountsTable({ accounts }) {
     };
 
     return (
-        <div>
-            <div className="section-header">
-                <div className="section-header__title">
-                    <span>🚨</span>
-                    Suspicious Accounts
-                    <span className="badge badge--shell" style={{ fontSize: '0.75rem', marginLeft: '0.5rem' }}>
-                        {accounts.length} flagged
-                    </span>
-                </div>
+        <div className="table-wrapper">
+            <div className="table-wrapper__title">
+                Suspicious Accounts
+                <span className="table-wrapper__count">
+                    {accounts.length} flagged
+                </span>
             </div>
 
             <div className="table-container" id="suspicious-accounts-table">

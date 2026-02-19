@@ -3,8 +3,11 @@ import * as d3 from 'd3';
 
 /**
  * Canvas-based graph visualization — dramatically more efficient than SVG.
- * Instead of creating thousands of DOM elements, we draw everything in a single
- * canvas context on each animation frame.
+ * Nodes are color-coded by detection pattern:
+ *   - Cycle: Hot Pink (#ff007f)
+ *   - Shell Network: Orange (#ff8c00)
+ *   - Fan-in/Fan-out: Green (#00ff00)
+ *   - Normal: Indigo (#6366f1)
  */
 function GraphVisualization({ graphData, fraudRings }) {
     const canvasRef = useRef(null);
@@ -24,17 +27,15 @@ function GraphVisualization({ graphData, fraudRings }) {
     const HEIGHT = 600;
     const DPR = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
 
-    // Ring color lookup
-    const ringColors = useMemo(() => {
+    // Build pattern type lookup per node from fraud rings
+    const nodePatternMap = useMemo(() => {
         const map = new Map();
-        const colors = [
-            '#ef4444', '#f59e0b', '#a855f7', '#ec4899', '#14b8a6',
-            '#f97316', '#8b5cf6', '#06b6d4', '#d946ef', '#84cc16'
-        ];
         if (fraudRings) {
-            fraudRings.forEach((ring, i) => {
+            fraudRings.forEach((ring) => {
                 ring.member_accounts.forEach(id => {
-                    if (!map.has(id)) map.set(id, colors[i % colors.length]);
+                    if (!map.has(id)) {
+                        map.set(id, ring.pattern_type);
+                    }
                 });
             });
         }
@@ -87,13 +88,19 @@ function GraphVisualization({ graphData, fraudRings }) {
         };
     }, [graphData]);
 
-    // Get node color
+    // Get node color based on pattern type
     const getNodeColor = useCallback((node) => {
-        if (node.isSuspicious) {
-            return ringColors.get(node.id) || '#ef4444';
-        }
-        return '#6366f1';
-    }, [ringColors]);
+        if (!node.isSuspicious) return '#6366f1';
+
+        const pattern = nodePatternMap.get(node.id);
+        if (!pattern) return '#ff007f'; // default suspicious to hotpink
+
+        if (pattern === 'cycle') return '#ff007f';           // Hot pink
+        if (pattern === 'shell_network') return '#ff8c00';   // Orange
+        if (pattern === 'fan_in' || pattern === 'fan_out' || pattern === 'fan_in_fan_out') return '#00ff00'; // Green
+
+        return '#ff007f'; // fallback
+    }, [nodePatternMap]);
 
     // Get node radius
     const getNodeRadius = useCallback((node) => {
@@ -241,7 +248,7 @@ function GraphVisualization({ graphData, fraudRings }) {
 
         // --- Draw labels (only for suspicious nodes, at sufficient zoom) ---
         if (transform.k > 0.5) {
-            ctx.font = `600 ${Math.max(7, 9 / transform.k)}px "JetBrains Mono", monospace`;
+            ctx.font = `600 ${Math.max(7, 9 / transform.k)}px "Geist Mono", monospace`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
 
@@ -254,7 +261,7 @@ function GraphVisualization({ graphData, fraudRings }) {
                 }
 
                 const r = getNodeRadius(node);
-                const label = node.id.length > 14 ? node.id.slice(0, 14) + '…' : node.id;
+                const label = node.id.length > 14 ? node.id.slice(0, 14) + '...' : node.id;
 
                 ctx.globalAlpha = labelAlpha;
                 ctx.fillStyle = '#e2e8f0';
@@ -489,7 +496,6 @@ function GraphVisualization({ graphData, fraudRings }) {
         <div className="graph-container" ref={containerRef} id="graph-container">
             <div className="graph-container__header">
                 <div className="graph-container__title">
-                    <span>🕸️</span>
                     Transaction Network Graph
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', fontWeight: 400 }}>
                         ({nodeCount} nodes, {edgeCount} edges
@@ -498,16 +504,20 @@ function GraphVisualization({ graphData, fraudRings }) {
                 </div>
                 <div className="graph-container__legend">
                     <div className="legend-item">
+                        <div className="legend-dot legend-dot--cycle" />
+                        <span>Cycle</span>
+                    </div>
+                    <div className="legend-item">
+                        <div className="legend-dot legend-dot--shell" />
+                        <span>Shell Network</span>
+                    </div>
+                    <div className="legend-item">
+                        <div className="legend-dot legend-dot--fanio" />
+                        <span>Fan-in / Fan-out</span>
+                    </div>
+                    <div className="legend-item">
                         <div className="legend-dot legend-dot--normal" />
                         <span>Normal</span>
-                    </div>
-                    <div className="legend-item">
-                        <div className="legend-dot legend-dot--suspicious" />
-                        <span>Suspicious</span>
-                    </div>
-                    <div className="legend-item">
-                        <div className="legend-dot legend-dot--ring" />
-                        <span>Ring Member</span>
                     </div>
                 </div>
             </div>
@@ -550,11 +560,11 @@ function GraphVisualization({ graphData, fraudRings }) {
                     </div>
                     {tooltip.data.isSuspicious ? (
                         <div className="node-tooltip__badge node-tooltip__badge--danger">
-                            ⚠️ Score: {tooltip.data.suspicionScore} — {tooltip.data.patterns?.join(', ')}
+                            Score: {tooltip.data.suspicionScore} | {tooltip.data.patterns?.join(', ')}
                         </div>
                     ) : (
                         <div className="node-tooltip__badge node-tooltip__badge--safe">
-                            ✅ No suspicious activity
+                            No suspicious activity
                         </div>
                     )}
                 </div>
