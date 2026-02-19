@@ -131,8 +131,9 @@ function GraphVisualization({ graphData, fraudRings }) {
             DPR * transform.y
         );
 
-        // Build hovered connections set for highlighting
+        // Build hovered connections set AND ring-peer set for highlighting
         let connectedIds = null;
+        let ringPeerIds = null;
         if (hovered) {
             connectedIds = new Set([hovered.id]);
             for (const l of links) {
@@ -140,6 +141,16 @@ function GraphVisualization({ graphData, fraudRings }) {
                 const tid = l.target.id || l.target;
                 if (sid === hovered.id) connectedIds.add(tid);
                 if (tid === hovered.id) connectedIds.add(sid);
+            }
+
+            // Also collect all nodes that share a fraud ring with the hovered node
+            ringPeerIds = new Set([hovered.id]);
+            if (fraudRings) {
+                for (const ring of fraudRings) {
+                    if (ring.member_accounts.includes(hovered.id)) {
+                        ring.member_accounts.forEach(id => ringPeerIds.add(id));
+                    }
+                }
             }
         }
 
@@ -165,11 +176,21 @@ function GraphVisualization({ graphData, fraudRings }) {
                 width = 0.8;
             }
 
-            // Dim edges not connected to hovered node
+            // Dim edges not connected to hovered node, but keep ring-peer edges visible
             if (hovered) {
-                const connected = sid === hovered.id || tid === hovered.id;
-                alpha = connected ? 0.8 : 0.03;
-                width = connected ? 2 : 0.3;
+                const directlyConnected = sid === hovered.id || tid === hovered.id;
+                const inSameRing = ringPeerIds && ringPeerIds.has(sid) && ringPeerIds.has(tid);
+
+                if (directlyConnected) {
+                    alpha = 0.8;
+                    width = 2;
+                } else if (inSameRing) {
+                    alpha = 0.4;
+                    width = 1.5;
+                } else {
+                    alpha = 0.03;
+                    width = 0.3;
+                }
             }
 
             ctx.beginPath();
@@ -214,9 +235,15 @@ function GraphVisualization({ graphData, fraudRings }) {
             const color = getNodeColor(node);
             let nodeAlpha = node.isSuspicious ? 0.9 : 0.5;
 
-            // Dim nodes not connected to hovered
+            // Dim nodes not connected to hovered (but keep ring peers visible)
             if (hovered && connectedIds) {
-                nodeAlpha = connectedIds.has(node.id) ? 1.0 : 0.08;
+                if (connectedIds.has(node.id)) {
+                    nodeAlpha = 1.0;
+                } else if (ringPeerIds && ringPeerIds.has(node.id)) {
+                    nodeAlpha = 0.7;
+                } else {
+                    nodeAlpha = 0.08;
+                }
             }
 
             // Suspicious outer ring (simple dashed circle, no glow filter)
@@ -257,7 +284,13 @@ function GraphVisualization({ graphData, fraudRings }) {
 
                 let labelAlpha = 0.85;
                 if (hovered && connectedIds) {
-                    labelAlpha = connectedIds.has(node.id) ? 1.0 : 0.08;
+                    if (connectedIds.has(node.id)) {
+                        labelAlpha = 1.0;
+                    } else if (ringPeerIds && ringPeerIds.has(node.id)) {
+                        labelAlpha = 0.6;
+                    } else {
+                        labelAlpha = 0.08;
+                    }
                 }
 
                 const r = getNodeRadius(node);
@@ -281,7 +314,7 @@ function GraphVisualization({ graphData, fraudRings }) {
         }
 
         ctx.restore();
-    }, [DPR, getNodeColor, getNodeRadius]);
+    }, [DPR, getNodeColor, getNodeRadius, fraudRings]);
 
     // Find node at canvas position
     const findNodeAt = useCallback((canvasX, canvasY) => {
