@@ -1,314 +1,487 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import * as d3 from 'd3';
 
+/**
+ * Canvas-based graph visualization — dramatically more efficient than SVG.
+ * Instead of creating thousands of DOM elements, we draw everything in a single
+ * canvas context on each animation frame.
+ */
 function GraphVisualization({ graphData, fraudRings }) {
-    const svgRef = useRef(null);
+    const canvasRef = useRef(null);
     const containerRef = useRef(null);
+    const simulationRef = useRef(null);
+    const transformRef = useRef(d3.zoomIdentity);
+    const hoveredNodeRef = useRef(null);
+    const dragNodeRef = useRef(null);
+    const nodesRef = useRef([]);
+    const linksRef = useRef([]);
+    const nodeMapRef = useRef(new Map());
     const [tooltip, setTooltip] = useState(null);
-    const [dimensions, setDimensions] = useState({ width: 960, height: 600 });
+    const [nodeCount, setNodeCount] = useState(0);
+    const [edgeCount, setEdgeCount] = useState(0);
 
-    // Build ring membership lookup
-    const ringMembership = useMemo(() => {
+    const WIDTH = 960;
+    const HEIGHT = 600;
+    const DPR = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+
+    // Ring color lookup
+    const ringColors = useMemo(() => {
         const map = new Map();
-        if (fraudRings) {
-            for (const ring of fraudRings) {
-                for (const member of ring.member_accounts) {
-                    if (!map.has(member)) map.set(member, []);
-                    map.get(member).push(ring.ring_id);
-                }
-            }
-        }
-        return map;
-    }, [fraudRings]);
-
-    // Color scale for rings
-    const ringColorScale = useMemo(() => {
-        if (!fraudRings || fraudRings.length === 0) return () => '#6366f1';
-        const ringIds = fraudRings.map(r => r.ring_id);
         const colors = [
             '#ef4444', '#f59e0b', '#a855f7', '#ec4899', '#14b8a6',
             '#f97316', '#8b5cf6', '#06b6d4', '#d946ef', '#84cc16'
         ];
-        const scale = {};
-        ringIds.forEach((id, i) => {
-            scale[id] = colors[i % colors.length];
-        });
-        return (ringId) => scale[ringId] || '#6366f1';
+        if (fraudRings) {
+            fraudRings.forEach((ring, i) => {
+                ring.member_accounts.forEach(id => {
+                    if (!map.has(id)) map.set(id, colors[i % colors.length]);
+                });
+            });
+        }
+        return map;
     }, [fraudRings]);
 
-    useEffect(() => {
-        if (!graphData || !svgRef.current) return;
+    // Filter and prepare graph data
+    const { filteredNodes, filteredEdges } = useMemo(() => {
+        if (!graphData) return { filteredNodes: [], filteredEdges: [] };
 
-        const container = containerRef.current;
-        if (container) {
-            const rect = container.getBoundingClientRect();
-            setDimensions({ width: rect.width, height: 600 });
-        }
+        let nodes = graphData.nodes;
+        let edges = graphData.edges;
 
-        const svg = d3.select(svgRef.current);
-        svg.selectAll('*').remove();
+        const MAX_NODES = 200;
 
-        const width = dimensions.width;
-        const height = dimensions.height;
-
-        // Limit nodes for performance (show most relevant)
-        let nodes = [...graphData.nodes];
-        let edges = [...graphData.edges];
-
-        // If too many nodes, prioritize suspicious ones and their neighbors
-        const MAX_NODES = 300;
         if (nodes.length > MAX_NODES) {
+            // Keep all suspicious nodes
             const suspiciousIds = new Set(nodes.filter(n => n.isSuspicious).map(n => n.id));
-            const relevantIds = new Set(suspiciousIds);
+            const neighborIds = new Set();
 
-            // Add neighbors of suspicious nodes
+            // Add 1-hop neighbors of suspicious nodes (limited)
             for (const edge of edges) {
-                if (suspiciousIds.has(edge.source) || suspiciousIds.has(edge.target)) {
-                    relevantIds.add(edge.source);
-                    relevantIds.add(edge.target);
+                if (suspiciousIds.has(edge.source)) neighborIds.add(edge.target);
+                if (suspiciousIds.has(edge.target)) neighborIds.add(edge.source);
+            }
+
+            const relevantIds = new Set([...suspiciousIds]);
+            // Add neighbors up to the limit
+            for (const id of neighborIds) {
+                if (relevantIds.size >= MAX_NODES) break;
+                relevantIds.add(id);
+            }
+
+            // Fill remaining with random nodes
+            if (relevantIds.size < MAX_NODES) {
+                for (const n of nodes) {
+                    if (relevantIds.size >= MAX_NODES) break;
+                    relevantIds.add(n.id);
                 }
             }
 
-            // If still too many, limit neighbors
-            if (relevantIds.size > MAX_NODES) {
-                nodes = nodes.filter(n => suspiciousIds.has(n.id)).slice(0, MAX_NODES);
-            } else {
-                // Add random normal nodes to fill
-                const remaining = nodes.filter(n => !relevantIds.has(n.id));
-                const added = remaining.slice(0, MAX_NODES - relevantIds.size);
-                added.forEach(n => relevantIds.add(n.id));
-                nodes = nodes.filter(n => relevantIds.has(n.id));
-            }
-
+            nodes = nodes.filter(n => relevantIds.has(n.id));
             const nodeIdSet = new Set(nodes.map(n => n.id));
             edges = edges.filter(e => nodeIdSet.has(e.source) && nodeIdSet.has(e.target));
         }
 
-        // Create copy for D3 mutation
-        const simNodes = nodes.map(n => ({ ...n }));
-        const simLinks = edges.map(e => ({ ...e }));
+        return {
+            filteredNodes: nodes.map(n => ({ ...n })),
+            filteredEdges: edges.map(e => ({ ...e }))
+        };
+    }, [graphData]);
 
-        // Create container groups
-        const g = svg.append('g');
+    // Get node color
+    const getNodeColor = useCallback((node) => {
+        if (node.isSuspicious) {
+            return ringColors.get(node.id) || '#ef4444';
+        }
+        return '#6366f1';
+    }, [ringColors]);
 
-        // Zoom behavior
-        const zoom = d3.zoom()
-            .scaleExtent([0.1, 5])
-            .on('zoom', (event) => {
-                g.attr('transform', event.transform);
-            });
+    // Get node radius
+    const getNodeRadius = useCallback((node) => {
+        if (node.isSuspicious) return 8;
+        return 3 + Math.min(Math.sqrt(node.txCount || 1), 4);
+    }, []);
 
-        svg.call(zoom);
+    // Draw the entire scene on canvas
+    const draw = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
 
-        // Arrow markers for directed edges
-        const defs = svg.append('defs');
+        const ctx = canvas.getContext('2d');
+        const transform = transformRef.current;
+        const nodes = nodesRef.current;
+        const links = linksRef.current;
+        const hovered = hoveredNodeRef.current;
 
-        defs.append('marker')
-            .attr('id', 'arrowhead')
-            .attr('viewBox', '0 -5 10 10')
-            .attr('refX', 20)
-            .attr('refY', 0)
-            .attr('markerWidth', 6)
-            .attr('markerHeight', 6)
-            .attr('orient', 'auto')
-            .append('path')
-            .attr('d', 'M0,-5L10,0L0,5')
-            .attr('fill', 'rgba(148, 163, 184, 0.4)');
+        // Clear
+        ctx.save();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        defs.append('marker')
-            .attr('id', 'arrowhead-suspicious')
-            .attr('viewBox', '0 -5 10 10')
-            .attr('refX', 24)
-            .attr('refY', 0)
-            .attr('markerWidth', 6)
-            .attr('markerHeight', 6)
-            .attr('orient', 'auto')
-            .append('path')
-            .attr('d', 'M0,-5L10,0L0,5')
-            .attr('fill', 'rgba(239, 68, 68, 0.6)');
+        // Apply zoom transform (accounting for DPR)
+        ctx.setTransform(
+            DPR * transform.k, 0, 0,
+            DPR * transform.k,
+            DPR * transform.x,
+            DPR * transform.y
+        );
 
-        // Glow filter for suspicious nodes
-        const filter = defs.append('filter')
-            .attr('id', 'glow');
-        filter.append('feGaussianBlur')
-            .attr('stdDeviation', '3')
-            .attr('result', 'coloredBlur');
-        const feMerge = filter.append('feMerge');
-        feMerge.append('feMergeNode').attr('in', 'coloredBlur');
-        feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+        // Build hovered connections set for highlighting
+        let connectedIds = null;
+        if (hovered) {
+            connectedIds = new Set([hovered.id]);
+            for (const l of links) {
+                const sid = l.source.id || l.source;
+                const tid = l.target.id || l.target;
+                if (sid === hovered.id) connectedIds.add(tid);
+                if (tid === hovered.id) connectedIds.add(sid);
+            }
+        }
+
+        // --- Draw edges ---
+        for (const l of links) {
+            const sx = l.source.x, sy = l.source.y;
+            const tx = l.target.x, ty = l.target.y;
+            if (sx === undefined || ty === undefined) continue;
+
+            const srcSus = l.source.isSuspicious;
+            const tgtSus = l.target.isSuspicious;
+            const sid = l.source.id || l.source;
+            const tid = l.target.id || l.target;
+
+            let alpha = 0.12;
+            let width = 0.5;
+
+            if (srcSus && tgtSus) {
+                alpha = 0.5;
+                width = 1.5;
+            } else if (srcSus || tgtSus) {
+                alpha = 0.25;
+                width = 0.8;
+            }
+
+            // Dim edges not connected to hovered node
+            if (hovered) {
+                const connected = sid === hovered.id || tid === hovered.id;
+                alpha = connected ? 0.8 : 0.03;
+                width = connected ? 2 : 0.3;
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(tx, ty);
+
+            if (srcSus && tgtSus) {
+                ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
+            } else if (srcSus || tgtSus) {
+                ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
+            } else {
+                ctx.strokeStyle = `rgba(148, 163, 184, ${alpha})`;
+            }
+            ctx.lineWidth = width;
+            ctx.stroke();
+
+            // Draw arrowhead for visible edges
+            if (alpha > 0.1) {
+                const dx = tx - sx, dy = ty - sy;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0) {
+                    const r = getNodeRadius(l.target);
+                    const ux = dx / len, uy = dy / len;
+                    const ax = tx - ux * (r + 3), ay = ty - uy * (r + 3);
+                    const arrowSize = 4;
+                    ctx.beginPath();
+                    ctx.moveTo(ax, ay);
+                    ctx.lineTo(ax - arrowSize * ux + arrowSize * 0.5 * uy, ay - arrowSize * uy - arrowSize * 0.5 * ux);
+                    ctx.lineTo(ax - arrowSize * ux - arrowSize * 0.5 * uy, ay - arrowSize * uy + arrowSize * 0.5 * ux);
+                    ctx.closePath();
+                    ctx.fillStyle = ctx.strokeStyle;
+                    ctx.fill();
+                }
+            }
+        }
+
+        // --- Draw nodes ---
+        for (const node of nodes) {
+            if (node.x === undefined) continue;
+
+            const r = getNodeRadius(node);
+            const color = getNodeColor(node);
+            let nodeAlpha = node.isSuspicious ? 0.9 : 0.5;
+
+            // Dim nodes not connected to hovered
+            if (hovered && connectedIds) {
+                nodeAlpha = connectedIds.has(node.id) ? 1.0 : 0.08;
+            }
+
+            // Suspicious outer ring (simple dashed circle, no glow filter)
+            if (node.isSuspicious) {
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, r + 5, 0, Math.PI * 2);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([3, 2]);
+                ctx.globalAlpha = nodeAlpha;
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Main circle
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+            ctx.globalAlpha = nodeAlpha;
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            // Stroke
+            ctx.strokeStyle = node.isSuspicious ? 'rgba(255,255,255,0.3)' : 'rgba(99,102,241,0.2)';
+            ctx.lineWidth = node.isSuspicious ? 1.5 : 0.5;
+            ctx.stroke();
+
+            ctx.globalAlpha = 1;
+        }
+
+        // --- Draw labels (only for suspicious nodes, at sufficient zoom) ---
+        if (transform.k > 0.5) {
+            ctx.font = `600 ${Math.max(7, 9 / transform.k)}px "JetBrains Mono", monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+
+            for (const node of nodes) {
+                if (!node.isSuspicious || node.x === undefined) continue;
+
+                let labelAlpha = 0.85;
+                if (hovered && connectedIds) {
+                    labelAlpha = connectedIds.has(node.id) ? 1.0 : 0.08;
+                }
+
+                const r = getNodeRadius(node);
+                const label = node.id.length > 14 ? node.id.slice(0, 14) + '…' : node.id;
+
+                ctx.globalAlpha = labelAlpha;
+                ctx.fillStyle = '#e2e8f0';
+                ctx.fillText(label, node.x, node.y + r + 6);
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // --- Hovered node highlight ring ---
+        if (hovered && hovered.x !== undefined) {
+            const r = getNodeRadius(hovered);
+            ctx.beginPath();
+            ctx.arc(hovered.x, hovered.y, r + 3, 0, Math.PI * 2);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }, [DPR, getNodeColor, getNodeRadius]);
+
+    // Find node at canvas position
+    const findNodeAt = useCallback((canvasX, canvasY) => {
+        const transform = transformRef.current;
+        // Convert screen coords to graph coords
+        const gx = (canvasX - transform.x) / transform.k;
+        const gy = (canvasY - transform.y) / transform.k;
+
+        const nodes = nodesRef.current;
+        let closest = null;
+        let closestDist = Infinity;
+
+        for (const node of nodes) {
+            if (node.x === undefined) continue;
+            const dx = node.x - gx;
+            const dy = node.y - gy;
+            const dist = dx * dx + dy * dy;
+            const r = getNodeRadius(node) + 4; // add hit margin
+            if (dist < r * r && dist < closestDist) {
+                closest = node;
+                closestDist = dist;
+            }
+        }
+        return closest;
+    }, [getNodeRadius]);
+
+    // Main effect: setup simulation and canvas interaction
+    useEffect(() => {
+        if (!filteredNodes.length || !canvasRef.current) return;
+
+        const canvas = canvasRef.current;
+        const container = containerRef.current;
+        const rect = container?.getBoundingClientRect();
+        const width = rect?.width || WIDTH;
+        const height = HEIGHT;
+
+        // Set canvas size for HiDPI
+        canvas.width = width * DPR;
+        canvas.height = height * DPR;
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+
+        // Copy data for D3 mutation
+        const simNodes = filteredNodes.map(n => ({ ...n }));
+        const simLinks = filteredEdges.map(e => ({ ...e }));
+
+        nodesRef.current = simNodes;
+        linksRef.current = simLinks;
+        setNodeCount(simNodes.length);
+        setEdgeCount(simLinks.length);
+
+        // Build node lookup
+        const nodeMap = new Map();
+        simNodes.forEach(n => nodeMap.set(n.id, n));
+        nodeMapRef.current = nodeMap;
 
         // Force simulation
         const simulation = d3.forceSimulation(simNodes)
             .force('link', d3.forceLink(simLinks)
                 .id(d => d.id)
-                .distance(80)
-                .strength(0.3))
+                .distance(60)
+                .strength(0.4))
             .force('charge', d3.forceManyBody()
-                .strength(-150)
-                .distanceMax(400))
+                .strength(-100)
+                .distanceMax(300))
             .force('center', d3.forceCenter(width / 2, height / 2))
-            .force('collision', d3.forceCollide().radius(d => d.isSuspicious ? 18 : 12))
-            .force('x', d3.forceX(width / 2).strength(0.05))
-            .force('y', d3.forceY(height / 2).strength(0.05));
+            .force('collision', d3.forceCollide().radius(d => d.isSuspicious ? 14 : 8))
+            .force('x', d3.forceX(width / 2).strength(0.06))
+            .force('y', d3.forceY(height / 2).strength(0.06))
+            .alphaDecay(0.03)
+            .velocityDecay(0.4);
 
-        // Draw edges
-        const link = g.append('g')
-            .selectAll('line')
-            .data(simLinks)
-            .join('line')
-            .attr('stroke', d => {
-                const sourceNode = simNodes.find(n => n.id === (d.source.id || d.source));
-                const targetNode = simNodes.find(n => n.id === (d.target.id || d.target));
-                if (sourceNode?.isSuspicious && targetNode?.isSuspicious) return 'rgba(239, 68, 68, 0.4)';
-                if (sourceNode?.isSuspicious || targetNode?.isSuspicious) return 'rgba(239, 68, 68, 0.2)';
-                return 'rgba(148, 163, 184, 0.12)';
-            })
-            .attr('stroke-width', d => {
-                const sourceNode = simNodes.find(n => n.id === (d.source.id || d.source));
-                const targetNode = simNodes.find(n => n.id === (d.target.id || d.target));
-                if (sourceNode?.isSuspicious && targetNode?.isSuspicious) return 2;
-                return 1;
-            })
-            .attr('marker-end', d => {
-                const sourceNode = simNodes.find(n => n.id === (d.source.id || d.source));
-                const targetNode = simNodes.find(n => n.id === (d.target.id || d.target));
-                if (sourceNode?.isSuspicious || targetNode?.isSuspicious) return 'url(#arrowhead-suspicious)';
-                return 'url(#arrowhead)';
-            });
+        simulationRef.current = simulation;
 
-        // Draw nodes
-        const node = g.append('g')
-            .selectAll('g')
-            .data(simNodes)
-            .join('g')
-            .call(d3.drag()
-                .on('start', (event, d) => {
-                    if (!event.active) simulation.alphaTarget(0.3).restart();
-                    d.fx = d.x;
-                    d.fy = d.y;
-                })
-                .on('drag', (event, d) => {
-                    d.fx = event.x;
-                    d.fy = event.y;
-                })
-                .on('end', (event, d) => {
-                    if (!event.active) simulation.alphaTarget(0);
-                    d.fx = null;
-                    d.fy = null;
-                }))
-            .style('cursor', 'pointer');
+        // On tick: just redraw canvas (no DOM manipulation!)
+        simulation.on('tick', draw);
 
-        // Suspicious node outer ring
-        node.filter(d => d.isSuspicious)
-            .append('circle')
-            .attr('r', 16)
-            .attr('fill', 'none')
-            .attr('stroke', d => {
-                const rings = ringMembership.get(d.id);
-                return rings ? ringColorScale(rings[0]) : '#ef4444';
-            })
-            .attr('stroke-width', 2.5)
-            .attr('stroke-dasharray', '4,2')
-            .style('filter', 'url(#glow)')
-            .style('animation', 'pulse 2s ease-in-out infinite');
-
-        // Main node circle
-        node.append('circle')
-            .attr('r', d => {
-                if (d.isSuspicious) return 10;
-                return 4 + Math.min(Math.sqrt(d.txCount), 6);
-            })
-            .attr('fill', d => {
-                if (d.isSuspicious) {
-                    const rings = ringMembership.get(d.id);
-                    return rings ? ringColorScale(rings[0]) : '#ef4444';
-                }
-                return '#6366f1';
-            })
-            .attr('fill-opacity', d => d.isSuspicious ? 0.9 : 0.5)
-            .attr('stroke', d => d.isSuspicious ? 'rgba(255,255,255,0.3)' : 'rgba(99,102,241,0.3)')
-            .attr('stroke-width', d => d.isSuspicious ? 2 : 1);
-
-        // Labels for suspicious nodes
-        node.filter(d => d.isSuspicious)
-            .append('text')
-            .text(d => d.id.length > 12 ? d.id.slice(0, 12) + '…' : d.id)
-            .attr('font-size', '8px')
-            .attr('font-family', 'JetBrains Mono, monospace')
-            .attr('fill', 'var(--text-primary)')
-            .attr('text-anchor', 'middle')
-            .attr('dy', 28)
-            .attr('font-weight', '600');
-
-        // Hover interactions
-        node.on('mouseenter', (event, d) => {
-            const [x, y] = d3.pointer(event, containerRef.current);
-            setTooltip({
-                x: Math.min(x + 15, dimensions.width - 250),
-                y: Math.max(y - 10, 10),
-                data: d
-            });
-
-            // Highlight connected edges
-            link.attr('stroke-opacity', l => {
-                return (l.source.id === d.id || l.target.id === d.id) ? 1 : 0.1;
-            }).attr('stroke-width', l => {
-                return (l.source.id === d.id || l.target.id === d.id) ? 2.5 : 0.5;
-            });
-
-            // Dim unconnected nodes
-            const connectedIds = new Set();
-            connectedIds.add(d.id);
-            simLinks.forEach(l => {
-                if (l.source.id === d.id) connectedIds.add(l.target.id);
-                if (l.target.id === d.id) connectedIds.add(l.source.id);
-            });
-
-            node.select('circle:last-of-type')
-                .attr('fill-opacity', n => connectedIds.has(n.id) ? 1 : 0.1);
-        })
-            .on('mouseleave', () => {
-                setTooltip(null);
-                link.attr('stroke-opacity', 1).attr('stroke-width', d => {
-                    const sourceNode = simNodes.find(n => n.id === (d.source.id || d.source));
-                    const targetNode = simNodes.find(n => n.id === (d.target.id || d.target));
-                    if (sourceNode?.isSuspicious && targetNode?.isSuspicious) return 2;
-                    return 1;
-                });
-                node.select('circle:last-of-type')
-                    .attr('fill-opacity', n => n.isSuspicious ? 0.9 : 0.5);
-            });
-
-        // Tick function
-        simulation.on('tick', () => {
-            link
-                .attr('x1', d => d.source.x)
-                .attr('y1', d => d.source.y)
-                .attr('x2', d => d.target.x)
-                .attr('y2', d => d.target.y);
-
-            node.attr('transform', d => `translate(${d.x},${d.y})`);
+        // Stop simulation after stabilization to save CPU
+        simulation.on('end', () => {
+            draw(); // final draw
         });
 
-        // Initial zoom to fit
+        // Zoom behavior on canvas using d3-zoom
+        const canvasSelection = d3.select(canvas);
+
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 6])
+            .on('zoom', (event) => {
+                transformRef.current = event.transform;
+                draw();
+            });
+
+        canvasSelection.call(zoom);
+
+        // Initial zoom to fit (after simulation settles a bit)
         setTimeout(() => {
-            const bounds = g.node().getBBox();
-            const dx = bounds.width;
-            const dy = bounds.height;
-            const x = bounds.x + dx / 2;
-            const y = bounds.y + dy / 2;
-            const scale = Math.min(0.8 * width / dx, 0.8 * height / dy, 2);
-            const transform = d3.zoomIdentity
+            if (simNodes.length === 0) return;
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const n of simNodes) {
+                if (n.x === undefined) continue;
+                if (n.x < minX) minX = n.x;
+                if (n.y < minY) minY = n.y;
+                if (n.x > maxX) maxX = n.x;
+                if (n.y > maxY) maxY = n.y;
+            }
+            const dx = maxX - minX || 1;
+            const dy = maxY - minY || 1;
+            const cx = (minX + maxX) / 2;
+            const cy = (minY + maxY) / 2;
+            const scale = Math.min(0.8 * width / dx, 0.8 * height / dy, 2.5);
+            const t = d3.zoomIdentity
                 .translate(width / 2, height / 2)
                 .scale(scale)
-                .translate(-x, -y);
-            svg.transition().duration(750).call(zoom.transform, transform);
-        }, 2000);
+                .translate(-cx, -cy);
+            canvasSelection.transition().duration(800).call(zoom.transform, t);
+        }, 1500);
+
+        // Mouse interactions
+        const handleMouseMove = (event) => {
+            const r = canvas.getBoundingClientRect();
+            const x = event.clientX - r.left;
+            const y = event.clientY - r.top;
+
+            if (dragNodeRef.current) {
+                // Dragging: update node position
+                const transform = transformRef.current;
+                const gx = (x - transform.x) / transform.k;
+                const gy = (y - transform.y) / transform.k;
+                dragNodeRef.current.fx = gx;
+                dragNodeRef.current.fy = gy;
+                simulation.alpha(0.3).restart();
+                return;
+            }
+
+            const node = findNodeAt(x, y);
+            const prev = hoveredNodeRef.current;
+
+            if (node !== prev) {
+                hoveredNodeRef.current = node;
+                canvas.style.cursor = node ? 'pointer' : 'grab';
+                draw();
+
+                if (node) {
+                    setTooltip({
+                        x: Math.min(event.clientX - r.left + 15, width - 260),
+                        y: Math.max(event.clientY - r.top - 10, 10),
+                        data: node
+                    });
+                } else {
+                    setTooltip(null);
+                }
+            }
+        };
+
+        const handleMouseDown = (event) => {
+            const r = canvas.getBoundingClientRect();
+            const x = event.clientX - r.left;
+            const y = event.clientY - r.top;
+            const node = findNodeAt(x, y);
+
+            if (node) {
+                event.stopPropagation();
+                dragNodeRef.current = node;
+                const transform = transformRef.current;
+                node.fx = (x - transform.x) / transform.k;
+                node.fy = (y - transform.y) / transform.k;
+                simulation.alphaTarget(0.3).restart();
+
+                // Disable zoom while dragging
+                canvasSelection.on('.zoom', null);
+            }
+        };
+
+        const handleMouseUp = () => {
+            if (dragNodeRef.current) {
+                dragNodeRef.current.fx = null;
+                dragNodeRef.current.fy = null;
+                dragNodeRef.current = null;
+                simulation.alphaTarget(0);
+
+                // Re-enable zoom
+                canvasSelection.call(zoom);
+            }
+        };
+
+        const handleMouseLeave = () => {
+            hoveredNodeRef.current = null;
+            setTooltip(null);
+            draw();
+        };
+
+        canvas.addEventListener('mousemove', handleMouseMove);
+        canvas.addEventListener('mousedown', handleMouseDown);
+        canvas.addEventListener('mouseup', handleMouseUp);
+        canvas.addEventListener('mouseleave', handleMouseLeave);
+        window.addEventListener('mouseup', handleMouseUp);
 
         return () => {
             simulation.stop();
+            simulationRef.current = null;
+            canvas.removeEventListener('mousemove', handleMouseMove);
+            canvas.removeEventListener('mousedown', handleMouseDown);
+            canvas.removeEventListener('mouseup', handleMouseUp);
+            canvas.removeEventListener('mouseleave', handleMouseLeave);
+            window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [graphData, dimensions, ringMembership, ringColorScale]);
+    }, [filteredNodes, filteredEdges, DPR, draw, findNodeAt]);
 
     if (!graphData) return null;
 
@@ -319,13 +492,14 @@ function GraphVisualization({ graphData, fraudRings }) {
                     <span>🕸️</span>
                     Transaction Network Graph
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', fontWeight: 400 }}>
-                        ({graphData.nodes.length} nodes, {graphData.edges.length} edges)
+                        ({nodeCount} nodes, {edgeCount} edges
+                        {graphData.nodes.length > nodeCount && ` of ${graphData.nodes.length} total`})
                     </span>
                 </div>
                 <div className="graph-container__legend">
                     <div className="legend-item">
                         <div className="legend-dot legend-dot--normal" />
-                        <span>Normal Account</span>
+                        <span>Normal</span>
                     </div>
                     <div className="legend-item">
                         <div className="legend-dot legend-dot--suspicious" />
@@ -338,9 +512,12 @@ function GraphVisualization({ graphData, fraudRings }) {
                 </div>
             </div>
 
-            <svg ref={svgRef} className="graph-svg" viewBox={`0 0 ${dimensions.width} ${dimensions.height}`} />
+            <canvas
+                ref={canvasRef}
+                style={{ width: '100%', height: HEIGHT, cursor: 'grab', display: 'block' }}
+            />
 
-            {/* Tooltip */}
+            {/* Tooltip overlay */}
             {tooltip && (
                 <div
                     className="node-tooltip"
@@ -353,11 +530,15 @@ function GraphVisualization({ graphData, fraudRings }) {
                     <div className="node-tooltip__title">{tooltip.data.id}</div>
                     <div className="node-tooltip__row">
                         <span className="node-tooltip__label">Total Sent</span>
-                        <span className="node-tooltip__value">${tooltip.data.totalSent?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                        <span className="node-tooltip__value">
+                            ${tooltip.data.totalSent?.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        </span>
                     </div>
                     <div className="node-tooltip__row">
                         <span className="node-tooltip__label">Total Received</span>
-                        <span className="node-tooltip__value">${tooltip.data.totalReceived?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                        <span className="node-tooltip__value">
+                            ${tooltip.data.totalReceived?.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        </span>
                     </div>
                     <div className="node-tooltip__row">
                         <span className="node-tooltip__label">Transactions</span>
@@ -369,11 +550,11 @@ function GraphVisualization({ graphData, fraudRings }) {
                     </div>
                     {tooltip.data.isSuspicious ? (
                         <div className="node-tooltip__badge node-tooltip__badge--danger">
-                            ⚠️ Suspicion Score: {tooltip.data.suspicionScore} — {tooltip.data.patterns?.join(', ')}
+                            ⚠️ Score: {tooltip.data.suspicionScore} — {tooltip.data.patterns?.join(', ')}
                         </div>
                     ) : (
                         <div className="node-tooltip__badge node-tooltip__badge--safe">
-                            ✅ No suspicious activity detected
+                            ✅ No suspicious activity
                         </div>
                     )}
                 </div>

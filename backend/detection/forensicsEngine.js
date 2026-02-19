@@ -172,6 +172,38 @@ class ForensicsEngine {
 
         const processingTime = (Date.now() - startTime) / 1000;
 
+        // Build fast lookup for suspicious accounts
+        const suspiciousLookup = new Map();
+        for (const acc of finalAccounts) {
+            suspiciousLookup.set(acc.account_id, acc);
+        }
+
+        // Limit graph data to prevent huge payloads
+        const MAX_GRAPH_NODES = 300;
+        let graphNodes = nodes;
+        let graphEdges = edges;
+
+        if (nodes.length > MAX_GRAPH_NODES) {
+            const suspiciousIds = new Set(finalAccounts.map(a => a.account_id));
+            const selectedIds = new Set(suspiciousIds);
+
+            // Add 1-hop neighbors of suspicious nodes
+            for (const e of edges) {
+                if (selectedIds.size >= MAX_GRAPH_NODES) break;
+                if (suspiciousIds.has(e.source)) selectedIds.add(e.target);
+                if (suspiciousIds.has(e.target)) selectedIds.add(e.source);
+            }
+
+            // Fill remaining with other nodes
+            for (const n of nodes) {
+                if (selectedIds.size >= MAX_GRAPH_NODES) break;
+                selectedIds.add(n);
+            }
+
+            graphNodes = nodes.filter(n => selectedIds.has(n));
+            graphEdges = edges.filter(e => selectedIds.has(e.source) && selectedIds.has(e.target));
+        }
+
         this.results = {
             suspicious_accounts: finalAccounts,
             fraud_rings: finalRings,
@@ -181,12 +213,10 @@ class ForensicsEngine {
                 fraud_rings_detected: finalRings.length,
                 processing_time_seconds: Math.round(processingTime * 10) / 10
             },
-            // Additional data for visualization
             graph_data: {
-                nodes: nodes.map(n => {
+                nodes: graphNodes.map(n => {
                     const meta = nodeMetadata.get(n);
-                    const isSuspicious = finalAccounts.some(a => a.account_id === n);
-                    const accountRing = finalAccounts.find(a => a.account_id === n);
+                    const accountInfo = suspiciousLookup.get(n);
                     return {
                         id: n,
                         totalSent: meta.totalSent,
@@ -194,13 +224,13 @@ class ForensicsEngine {
                         txCount: meta.txCount,
                         inDegree: meta.inDegree,
                         outDegree: meta.outDegree,
-                        isSuspicious,
-                        ringId: accountRing ? accountRing.ring_id : null,
-                        suspicionScore: accountRing ? accountRing.suspicion_score : 0,
-                        patterns: accountRing ? accountRing.detected_patterns : []
+                        isSuspicious: !!accountInfo,
+                        ringId: accountInfo ? accountInfo.ring_id : null,
+                        suspicionScore: accountInfo ? accountInfo.suspicion_score : 0,
+                        patterns: accountInfo ? accountInfo.detected_patterns : []
                     };
                 }),
-                edges: edges.map(e => ({
+                edges: graphEdges.map(e => ({
                     source: e.source,
                     target: e.target,
                     amount: e.amount,
