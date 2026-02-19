@@ -111,7 +111,8 @@ class ForensicsEngine {
                 member_accounts: [...chain.chain],
                 pattern_type: 'shell_network',
                 risk_score: Math.round(chain.score * 10) / 10,
-                chain_length: chain.chain.length
+                chain_length: chain.chain.length,
+                amount_pattern: chain.amountPattern || 'mixed'
             });
 
             for (const account of chain.chain) {

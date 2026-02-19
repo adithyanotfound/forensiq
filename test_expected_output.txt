@@ -1,0 +1,42 @@
+Test dataset: test_transactions_10.csv
+Total transactions: 10
+
+Expected detections (concise human-readable verification):
+
+1) Cycle (3-node ring)
+  - Transactions: TXN_00001, TXN_00002, TXN_00003
+  - Accounts expected: ACC_A_001, ACC_B_001, ACC_C_001
+  - Expected pattern: cycle_length_3 (these three form a circular fund routing)
+
+2) Fan-in (aggregator)
+  - Transactions: TXN_00004, TXN_00005, TXN_00006
+  - Accounts expected: ACC_AGG_001 flagged as fan-in hub (receives from multiple unique senders in short window)
+  - Supporting accounts: ACC_FI_S1_001, ACC_FI_S2_001, ACC_FI_S3_001 (senders)
+
+3) Fan-out / dispersal
+  - Transactions: TXN_00007, TXN_00008
+  - Accounts expected: ACC_DISP_001 flagged as fan-out disperser (sends to multiple receivers)
+  - Supporting accounts: ACC_R_OUT1_001, ACC_R_OUT2_001 (receivers)
+
+4) Short shell chain (2-hop)
+  - Transactions: TXN_00009, TXN_00010
+  - Accounts expected: ACC_SHELL_001 (intermediary) flagged as shell/intermediary; ACC_SRC_SHELL_001 and ACC_DST_001 may receive elevated suspicion depending on engine rules
+
+Desired minimal machine-checkable output format (example):
+{
+  "suspicious_accounts": {
+    "ACC_A_001": ["cycle_length_3"],
+    "ACC_B_001": ["cycle_length_3"],
+    "ACC_C_001": ["cycle_length_3"],
+    "ACC_AGG_001": ["fan_in"],
+    "ACC_DISP_001": ["fan_out"],
+    "ACC_SHELL_001": ["shell_chain"]
+  },
+  "fraud_rings": [
+    {"type":"cycle","members":["ACC_A_001","ACC_B_001","ACC_C_001"]}
+  ]
+}
+
+Notes:
+- Some detection engines may also flag `ACC_SRC_SHELL_001` and `ACC_DST_001` as related to a shell chain; accept either minimal set above or a superset that includes them.
+- The verification file lists the core expected flags; if your engine reports additional context (scores, timestamps, edges), compare core flagged accounts and ring membership.
