@@ -1,0 +1,220 @@
+======================================================================
+FINANCIAL FORENSICS TEST DATA - EDGE CASE DOCUMENTATION
+======================================================================
+
+Generated: 2026-02-19 14:08:52
+Total transactions: 702
+Unique accounts: 619
+
+----------------------------------------------------------------------
+
+EDGE CASE 1a: Length-3 Cycle
+  Accounts: ACC_CYCLE3_0001, ACC_CYCLE3_0002, ACC_CYCLE3_0003
+  Pattern: A→B→C→A within 6 hours
+  Expected: All 3 flagged as cycle_length_3, same ring
+
+----------------------------------------------------------------------
+
+EDGE CASE 1b: Length-4 Cycle
+  Accounts: ACC_CYCLE4_0001 through ACC_CYCLE4_0004
+  Pattern: A→B→C→D→A within 12 hours
+  Expected: All 4 flagged as cycle_length_4
+
+----------------------------------------------------------------------
+
+EDGE CASE 1c: Length-5 Cycle (Max Detectable)
+  Accounts: ACC_CYCLE5_0001 through ACC_CYCLE5_0005
+  Pattern: A→B→C→D→E→A within 24 hours
+  Expected: All 5 flagged as cycle_length_5
+
+----------------------------------------------------------------------
+
+EDGE CASE 1d: Overlapping Cycles Sharing Node
+  ACC_OVERLAP_0001 participates in TWO cycles:
+    Cycle A: ACC_OVERLAP_0001→0002→0003→0001
+    Cycle B: ACC_OVERLAP_0001→0004→0005→0001
+  Expected: ACC_OVERLAP_0001 has highest suspicion (multi-ring)
+
+----------------------------------------------------------------------
+
+EDGE CASE 1e: Rapid-Fire Cycle (30 minutes)
+  Accounts: ACC_RAPID_0001 through ACC_RAPID_0003
+  Pattern: All 3 transfers within 30 minutes (high velocity)
+  Expected: High suspicion score due to temporal proximity
+
+----------------------------------------------------------------------
+
+EDGE CASE 2a: Fan-In Pattern (15→1) within 48 hours
+  Aggregator: ACC_FANIN_AGG_0001
+  Senders: ACC_FANIN_S_0001 through ACC_FANIN_S_0015
+  Expected: ACC_FANIN_AGG_0001 flagged as fan_in hub
+
+----------------------------------------------------------------------
+
+EDGE CASE 2b: Fan-Out Pattern (1→15) within 48 hours
+  Disperser: ACC_FANOUT_DISP_0001
+  Receivers: ACC_FANOUT_R_0001 through ACC_FANOUT_R_0015
+  Expected: ACC_FANOUT_DISP_0001 flagged as fan_out disperser
+
+----------------------------------------------------------------------
+
+EDGE CASE 2c: Combined Fan-In + Fan-Out (same node)
+  Hub: ACC_COMBO_HUB_0001
+  12 senders → hub → 12 receivers within 72 hours
+  Expected: Very high suspicion - money passthrough
+
+----------------------------------------------------------------------
+
+EDGE CASE 2d: Structuring Pattern (below $10K threshold)
+  12 senders all send $9,500-$9,999 to ACC_STRUCT_AGG_0001
+  Expected: Flagged with high score due to structuring indicator
+
+----------------------------------------------------------------------
+
+EDGE CASE 2e: Identical Amount Smurfing
+  11 senders all send exactly $999.99 to ACC_IDENT_AGG_0001
+  Expected: High suspicion due to uniform amounts
+
+----------------------------------------------------------------------
+
+EDGE CASE 3a: 3-Hop Shell Chain
+  Path: ACC_SHELL3_SRC→SHELL3_MID1→SHELL3_MID2→SHELL3_DST
+  Intermediaries have only 2 transactions each (1 in, 1 out)
+  Expected: SHELL3_MID1, SHELL3_MID2 flagged as shell intermediaries
+
+----------------------------------------------------------------------
+
+EDGE CASE 3b: 5-Hop Shell Chain
+  Path: SRC→M1→M2→M3→M4→DST with amount decay
+  Each intermediate has exactly 2 transactions
+  Expected: All intermediaries flagged, high shell_network score
+
+----------------------------------------------------------------------
+
+EDGE CASE 4a: FALSE POSITIVE TRAP - Merchant Account
+  ACC_MERCHANT_0001 receives from 55 unique customers
+  Varied amounts ($5 - $500), no sends back to customers
+  Only sends to 2 supplier accounts
+  Expected: MUST NOT be flagged (legitimate merchant)
+
+----------------------------------------------------------------------
+
+EDGE CASE 4b: FALSE POSITIVE TRAP - Payroll Account
+  ACC_PAYROLL_0001 sends ~$4000 to 25 employees every 30 days
+  3 pay cycles, regular intervals, no back-flow
+  Expected: MUST NOT be flagged (legitimate payroll)
+
+----------------------------------------------------------------------
+
+EDGE CASE 4c: FALSE POSITIVE TRAP - Exchange Platform Hub
+  ACC_EXCHANGE_0001 has 60+ depositors and 60+ withdrawers
+  Very low overlap between depositors and withdrawers
+  Expected: MUST NOT be flagged (legitimate exchange)
+
+----------------------------------------------------------------------
+
+EDGE CASE 4d: FALSE POSITIVE TRAP - B2B Regular Transfers
+  Two companies sending large amounts back and forth regularly
+  Expected: MUST NOT be flagged (legitimate B2B)
+
+----------------------------------------------------------------------
+
+EDGE CASE 5a: BOUNDARY - Exactly 10 Fan-In Senders (At Threshold)
+  ACC_BOUND10_AGG_0001 receives from exactly 10 senders
+  Expected: Should trigger fan-in detection (threshold is 10+)
+
+----------------------------------------------------------------------
+
+EDGE CASE 5b: BOUNDARY - Only 9 Fan-In Senders (Below Threshold)
+  ACC_BOUND9_AGG_0001 receives from only 9 senders
+  Expected: MUST NOT trigger fan-in detection
+
+----------------------------------------------------------------------
+
+EDGE CASE 5c: BOUNDARY - Exactly 72-Hour Window
+  12 senders to ACC_72H_AGG_0001 spread across exactly 72 hours
+  Expected: Should trigger (within 72h window)
+
+----------------------------------------------------------------------
+
+EDGE CASE 5d: BOUNDARY - Just Outside 72-Hour Window
+  10 senders spread across 73 hours (1 hour over limit)
+  None fit in a 72h window with 10+ senders
+  Expected: Lower suspicion or not triggered by temporal clustering
+
+----------------------------------------------------------------------
+
+EDGE CASE 5e: Very Large Amounts ($10M+)
+  Cycle with $10M+ amounts
+  Expected: Still detected as cycle pattern
+
+----------------------------------------------------------------------
+
+EDGE CASE 5f: Very Small Amounts ($0.01)
+  Cycle with penny amounts
+  Expected: Still detected as cycle pattern (amount doesn't matter)
+
+----------------------------------------------------------------------
+
+EDGE CASE 5g: Identical Timestamps
+  Multiple transactions at exact same time
+  Expected: Should handle without errors
+
+----------------------------------------------------------------------
+
+EDGE CASE 5h: Isolated Node Pairs
+  5 disconnected pairs with single transactions
+  Expected: Should NOT be flagged (no patterns)
+
+----------------------------------------------------------------------
+
+EDGE CASE 6a: Mixed Pattern - Account in Cycle + Fan-In
+  ACC_MIXED_0001 participates in a 3-cycle
+  ACC_MIXED_0001 also receives from 12 unique senders
+  Expected: Multiple detected patterns, very high suspicion
+
+----------------------------------------------------------------------
+
+EDGE CASE 6b: Shell Chain Feeding Into Cycle
+  Shell chain: SRC→SHELL1→SHELL2→CYCLE_NODE
+  Then CYCLE_NODE participates in a 3-cycle with others
+  Expected: Multiple pattern types detected
+
+----------------------------------------------------------------------
+
+EDGE CASE 6c: Diamond Pattern
+  A→B, A→C, B→D, C→D (funds split and reconverge)
+  Expected: May flag depending on intermediate account activity
+
+----------------------------------------------------------------------
+
+EDGE CASE 7: Background Noise
+  ~200 random legitimate transactions between unique account pairs
+  Expected: None should be flagged
+
+----------------------------------------------------------------------
+
+======================================================================
+SUMMARY OF EXPECTED RESULTS
+======================================================================
+
+PATTERNS THAT SHOULD BE DETECTED:
+  ✓ Cycle length 3 (cases 1a, 1d, 1e, 5e, 5f)
+  ✓ Cycle length 4 (case 1b)
+  ✓ Cycle length 5 (case 1c)
+  ✓ Overlapping cycles (case 1d)
+  ✓ Fan-in with temporal clustering (cases 2a, 2d, 2e, 5a)
+  ✓ Fan-out with temporal clustering (case 2b)
+  ✓ Combined fan-in/fan-out (case 2c)
+  ✓ Shell chains (cases 3a, 3b)
+  ✓ Mixed patterns (cases 6a, 6b)
+
+PATTERNS THAT MUST NOT BE FLAGGED (FALSE POSITIVE TRAPS):
+  ✗ Merchant account with 55 customers (case 4a)
+  ✗ Payroll account with 25 employees × 3 cycles (case 4b)
+  ✗ Exchange platform hub (case 4c)
+  ✗ B2B regular large transfers (case 4d)
+  ✗ Background noise normal transactions (case 7)
+  ✗ Below-threshold fan-in with 9 senders (case 5b)
+  ✗ Isolated node pairs (case 5h)
+
