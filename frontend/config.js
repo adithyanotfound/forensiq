@@ -1,0 +1,1 @@
+const BACKEND_URL = 'https://runtime-terrors-api.onrender.com/api/'
