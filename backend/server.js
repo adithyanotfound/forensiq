@@ -21,11 +21,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Configure CORS
-app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'https://runtime-terrors-api.onrender.com', 'https://forensiq-eta.vercel.app/'],
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type']
-}));
+app.use(cors());
 
 app.use(express.json({ limit: '50mb' }));
 
