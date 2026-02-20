@@ -74,7 +74,7 @@ function App() {
 
     const handleDownload = useCallback(() => {
         if (!sessionId) return;
-        window.open(`/api/download/${sessionId}`, '_blank');
+        window.open(`https://runtime-terrors-api.onrender.com/api/download/${sessionId}`, '_blank');
     }, [sessionId]);
 
     const handleReset = useCallback(() => {
