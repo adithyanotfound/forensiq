@@ -10,6 +10,7 @@ const CycleDetector = require('./cycleDetector');
 const SmurfingDetector = require('./smurfingDetector');
 const ShellNetworkDetector = require('./shellDetector');
 const FalsePositiveFilter = require('./falsePositiveFilter');
+const ScoringEngine = require('./scoringEngine');
 
 class ForensicsEngine {
     constructor(transactions) {
@@ -147,29 +148,42 @@ class ForensicsEngine {
         const mergedRings = this._mergeOverlappingRings(filteredRings);
 
         // Reassign ring IDs after merge
-        const finalRings = mergedRings.map((ring, idx) => ({
+        const ringsWithIds = mergedRings.map((ring, idx) => ({
             ...ring,
             ring_id: `RING_${String(idx + 1).padStart(3, '0')}`
         }));
 
+        // ═══════════════════════════════════════════════════════════
+        //  SCORING ENGINE — Suspicion Scores → Risk Scores
+        //  (accounts scored FIRST, then rings use avg member suspicion)
+        // ═══════════════════════════════════════════════════════════
+        const scoringEngine = new ScoringEngine(
+            this.transactions, adjacencyList, reverseAdjList, nodeMetadata
+        );
+
         // Update ring_id references in accounts
         const ringMapping = new Map();
-        for (const ring of mergedRings) {
+        for (const ring of ringsWithIds) {
             for (const member of ring.member_accounts) {
-                const newRing = finalRings.find(r =>
-                    r.member_accounts.includes(member)
-                );
-                if (newRing) ringMapping.set(member, newRing.ring_id);
+                ringMapping.set(member, ring.ring_id);
             }
         }
 
-        const finalAccounts = filteredAccounts.map(acc => ({
+        const accountsWithRingIds = filteredAccounts.map(acc => ({
             ...acc,
             ring_id: ringMapping.get(acc.account_id) || acc.ring_id
         }));
 
-        // Re-sort after updates
-        finalAccounts.sort((a, b) => b.suspicion_score - a.suspicion_score);
+        // STEP 1: Compute Suspicion Scores for each account
+        //   S_account = min(100, max(0, 35·PTR + 35·V + PM − FPP))
+        const scoredAccounts = scoringEngine.scoreAllAccounts(accountsWithRingIds);
+
+        // STEP 2: Compute Risk Scores for each fraud ring
+        //   S_ring = min(100, avg(S_account) + T_density + C_severity)
+        const scoredRings = scoringEngine.scoreAllRings(ringsWithIds, scoredAccounts);
+
+        const finalAccounts = scoredAccounts;
+        const finalRings = scoredRings;
 
         const processingTime = (Date.now() - startTime) / 1000;
 
@@ -228,6 +242,7 @@ class ForensicsEngine {
                         isSuspicious: !!accountInfo,
                         ringId: accountInfo ? accountInfo.ring_id : null,
                         suspicionScore: accountInfo ? accountInfo.suspicion_score : 0,
+                        suspicionLabel: accountInfo ? accountInfo.suspicion_label : null,
                         patterns: accountInfo ? accountInfo.detected_patterns : []
                     };
                 }),
