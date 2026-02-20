@@ -31,7 +31,7 @@ function App() {
             setProgress(20);
             setProgressText('Parsing transactions...');
 
-            const response = await fetch('/api/analyze', {
+            const response = await fetch('https://runtime-terrors-api.onrender.com/api/analyze', {
                 method: 'POST',
                 body: formData,
             });
