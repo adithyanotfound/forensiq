@@ -87,9 +87,9 @@ function Dashboard({ results }) {
         };
     }, [graph_data, suspicious_accounts, fraud_rings]);
 
-    // Mini sparkline for stat tiles
-    const createSparklineData = (data, color) => ({
-        labels: data.map((_, i) => i),
+    // Mini sparkline for stat tiles — with interactive tooltip
+    const createSparklineData = (data, color, labels) => ({
+        labels: labels || data.map((_, i) => i),
         datasets: [{
             data,
             borderColor: color,
@@ -98,15 +98,47 @@ function Dashboard({ results }) {
             tension: 0.4,
             fill: true,
             pointRadius: 0,
+            pointHoverRadius: 5,
+            pointHoverBackgroundColor: color,
+            pointHoverBorderColor: '#fff',
+            pointHoverBorderWidth: 2,
         }],
     });
 
     const sparklineOptions = {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: {
+            mode: 'index',
+            intersect: false,
+        },
         plugins: {
             legend: { display: false },
-            tooltip: { enabled: false },
+            tooltip: {
+                enabled: true,
+                backgroundColor: '#1a1a1a',
+                titleColor: '#a0a0a0',
+                bodyColor: '#f1f5f9',
+                borderColor: 'rgba(255,255,255,0.12)',
+                borderWidth: 1,
+                titleFont: { family: 'Geist', size: 11, weight: '500' },
+                bodyFont: { family: 'Geist Mono', size: 13, weight: '700' },
+                padding: 10,
+                cornerRadius: 8,
+                displayColors: false,
+                caretSize: 5,
+                callbacks: {
+                    title: (items) => {
+                        if (items.length && timeSeriesData.labels.length > items[0].dataIndex) {
+                            return timeSeriesData.labels[items[0].dataIndex];
+                        }
+                        return '';
+                    },
+                    label: (context) => {
+                        return `${context.parsed.y.toLocaleString()}`;
+                    },
+                },
+            },
         },
         scales: {
             x: { display: false },
@@ -198,7 +230,7 @@ function Dashboard({ results }) {
                     </div>
                     <div className="stat-tile__chart">
                         <Line
-                            data={createSparklineData(timeSeriesData.totalAccounts, '#ffba08')}
+                            data={createSparklineData(timeSeriesData.totalAccounts, '#ffba08', timeSeriesData.labels)}
                             options={sparklineOptions}
                         />
                     </div>
@@ -211,7 +243,7 @@ function Dashboard({ results }) {
                     </div>
                     <div className="stat-tile__chart">
                         <Line
-                            data={createSparklineData(timeSeriesData.suspiciousAccounts, '#dc2f02')}
+                            data={createSparklineData(timeSeriesData.suspiciousAccounts, '#dc2f02', timeSeriesData.labels)}
                             options={sparklineOptions}
                         />
                     </div>
@@ -224,7 +256,7 @@ function Dashboard({ results }) {
                     </div>
                     <div className="stat-tile__chart">
                         <Line
-                            data={createSparklineData(timeSeriesData.fraudRings, '#70e000')}
+                            data={createSparklineData(timeSeriesData.fraudRings, '#70e000', timeSeriesData.labels)}
                             options={sparklineOptions}
                         />
                     </div>

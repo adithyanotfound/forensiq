@@ -111,7 +111,7 @@ function FileUpload({ onUpload, loading }) {
             </div>
 
             {selectedFile && !loading && (
-                <div style={{ textAlign: 'center', marginTop: '1.5rem' }} className="fade-in">
+                <div style={{ textAlign: 'center', marginTop: '1.5rem', position: 'relative', zIndex: 1 }} className="fade-in">
                     <button
                         className="btn btn--primary btn--lg"
                         onClick={handleAnalyze}

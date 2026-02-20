@@ -5,6 +5,7 @@ import GraphVisualization from './components/GraphVisualization';
 import FraudRingTable from './components/FraudRingTable';
 import SuspiciousAccountsTable from './components/SuspiciousAccountsTable';
 import Statistics from './components/Statistics';
+import Antigravity from './components/Antigravity';
 
 function App() {
     const [results, setResults] = useState(null);
@@ -111,6 +112,27 @@ function App() {
                 )}
 
                 <div className="upload-page">
+                    {/* Background Antigravity particle effect */}
+                    <div className="landing-bg">
+                        <Antigravity
+                            count={300}
+                            magnetRadius={6}
+                            ringRadius={7}
+                            waveSpeed={0.4}
+                            waveAmplitude={1}
+                            particleSize={1.5}
+                            lerpSpeed={0.05}
+                            color="#5227FF"
+                            autoAnimate
+                            particleVariance={1}
+                            rotationSpeed={0}
+                            depthFactor={1}
+                            pulseSpeed={3}
+                            particleShape="capsule"
+                            fieldStrength={10}
+                        />
+                    </div>
+
                     {/* Header */}
                     <header className="header">
                         <div className="header__badge">
