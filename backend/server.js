@@ -1,5 +1,5 @@
 /**
- * Financial Forensics Engine - Express Server
+ * Forensiq Engine - Express Server
  * 
  * Provides REST API endpoints for:
  * - CSV file upload and processing
@@ -227,7 +227,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Financial Forensics Engine running on port ${PORT}`);
+    console.log(`Forensiq Engine running on port ${PORT}`);
     console.log(`   API endpoint: http://localhost:${PORT}/api/analyze`);
 });
 

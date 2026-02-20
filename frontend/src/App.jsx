@@ -138,7 +138,7 @@ function App() {
                         <div className="header__badge">
                             <span>Advanced Threat Detection</span>
                         </div>
-                        <h1 className="header__title">Financial Forensics Engine</h1>
+                        <h1 className="header__title">Forensiq Engine</h1>
                         <p className="header__subtitle">
                             Expose money muling networks through graph analysis, cycle detection, and intelligent pattern recognition.
                         </p>
@@ -207,7 +207,7 @@ function App() {
             {/* Sidebar */}
             <aside className={`sidebar ${sidebarOpen ? 'sidebar--open' : ''}`} id="sidebar">
                 <div className="sidebar__brand" onClick={handleReset} id="brand-home-link">
-                    <div className="sidebar__brand-name">Financial Forensics</div>
+                    <div className="sidebar__brand-name">Forensiq</div>
                     <div className="sidebar__brand-sub">Money Muling Detector</div>
                 </div>
 

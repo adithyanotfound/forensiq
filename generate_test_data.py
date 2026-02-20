@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Financial Forensics Test Data Generator
+Forensiq Test Data Generator
 ========================================
 Generates a comprehensive CSV test dataset with ALL possible edge cases
 for money muling detection testing.
@@ -594,7 +594,7 @@ with open(csv_file, 'w', newline='') as f:
 doc_file = "test_edge_cases.txt"
 with open(doc_file, 'w') as f:
     f.write("=" * 70 + "\n")
-    f.write("FINANCIAL FORENSICS TEST DATA - EDGE CASE DOCUMENTATION\n")
+    f.write("Forensiq TEST DATA - EDGE CASE DOCUMENTATION\n")
     f.write("=" * 70 + "\n\n")
     f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     f.write(f"Total transactions: {len(transactions)}\n")

@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/Vite-6-646CFF?style=for-the-badge&logo=vite&logoColor=white" />
 </p>
 
-<h1 align="center">🔬 Financial Forensics Engine</h1>
+<h1 align="center">🔬 Forensiq Engine</h1>
 
 <p align="center">
   <strong>Expose money muling networks through graph analysis, cycle detection, and intelligent pattern recognition.</strong>
@@ -20,7 +20,7 @@
 
 ## 🎯 What It Does
 
-The Financial Forensics Engine ingests raw transaction data and automatically identifies **three classes of financial fraud**:
+The Forensiq Engine ingests raw transaction data and automatically identifies **three classes of financial fraud**:
 
 | Pattern | What It Catches | Real-World Example |
 |---|---|---|

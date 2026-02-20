@@ -131,7 +131,7 @@ function Statistics({ results }) {
             // Title
             doc.setFontSize(20);
             doc.setTextColor(20, 184, 166);
-            doc.text('Financial Forensics Report', pageWidth / 2, 22, { align: 'center' });
+            doc.text('Forensiq Report', pageWidth / 2, 22, { align: 'center' });
 
             doc.setFontSize(10);
             doc.setTextColor(160, 160, 160);

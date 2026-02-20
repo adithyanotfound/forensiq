@@ -1,7 +1,7 @@
 {
   "name": "forensics-backend",
   "version": "1.0.0",
-  "description": "Financial Forensics Engine Backend",
+  "description": "Forensiq Engine Backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
